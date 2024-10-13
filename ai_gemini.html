@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en"> <!-- Changed to 'en' for English -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+    <title>GrimBot Storyteller 🧙‍♂️</title>
+    <style>
+        /* CSS Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            height: 100%;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #app-container {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+        }
+
+        #sidebar {
+            background-color: #2a2a2a;
+            color: white;
+            padding: 20px;
+            width: 250px;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        #message-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #input-area {
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+
+        #message-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #send-button {
+            background-color: #3e7a40;
+            color: white;
+            font-weight: bold;
+        }
+
+        #send-button:hover {
+            background-color: #2a2a2a;
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 80%;
+            margin-bottom: 15px;
+            word-wrap: break-word;
+        }
+
+        .user-message {
+            background-color: #bee0be;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .bot-message {
+            background-color: #E5E5EA;
+            align-self: flex-start;
+        }
+
+        #error-message {
+            color: #ff0000;
+            margin-top: 10px;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            animation: spin 1s linear infinite;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            margin: auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            #app-container {
+                flex-direction: column;
+            }
+
+            #sidebar {
+                width: 100%;
+                padding: 10px;
+            }
+
+            #message-form {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div id="sidebar">       
+            <h2>StoryBot by NL</h2>
+            <h2 style="color: rgb(0, 132, 255);">Explore Grimoria World 🌍</h2>
+        </div>
+        <div id="chat-container">
+            <div id="message-area"></div>
+            <div id="input-area">
+                <form id="message-form">
+                    <input type="text" id="user-input" placeholder="Ask about the story...">
+                    <button type="submit" id="send-button" class="btn">Send</button>
+                </form>
+                <div id="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.3.4/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Marked for Markdown-to-HTML conversion -->
+    <script type="importmap">
+        {
+            "imports": {
+                "@google/generative-ai": "https://esm.run/@google/generative-ai"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+
+        // API Configuration
+        const API_CONFIG = { 
+            API_KEY: "your-private-api-key", // ⚠️ Replace with your actual API key. Ensure to secure this in a backend for production.
+            MODEL: "gemini-1.5-flash" // Ensure this model is supported and available
+        };
+
+        // Placeholder for Story Chapters
+        const STORY_CONTENT = `
+        ### Chapter 1: The Beginning
+        Once upon a time in Grimoria, a land shrouded in mystery and magic, there existed a kingdom ruled by the wise King Eldric. The people of Grimoria thrived under his benevolent leadership, unaware of the dark forces brewing beyond the horizon.
+        
+        ### Chapter 2: The Journey
+        A young adventurer named Lyra decided to explore the ancient forests of Grimoria. Armed with courage and curiosity, she ventured into the unknown, seeking the secrets that lay hidden within the dense woods.
+        
+        ### Chapter 3: The Revelation
+        Deep within the heart of the forest, Lyra discovered an enchanted artifact that held the key to Grimoria's forgotten past. As she touched the artifact, visions of the kingdom's history unfolded before her eyes, revealing truths that would change everything.
+        `;
+
+        // Initial Context Prompt
+        const INITIAL_CONTEXT_PROMPT = `
+        System: Forget all previous instructions.
+        Role: GrimBot, a knowledgeable storyteller about Grimoria World.
+        Purpose: Assist users by providing information, chapters, and summaries related to Grimoria World.
+        
+        Instructions:
+        
+        Available Story Content:
+        ${STORY_CONTENT}
+        `;
+
+        // DOM Module
+        const DOM = {
+            messageArea: document.getElementById('message-area'),
+            userInput: document.getElementById('user-input'),
+            sendButton: document.getElementById('send-button'),
+            errorMessage: document.getElementById('error-message'),
+            messageForm: document.getElementById('message-form')
+        };
+
+        // Story Manager
+        const StoryManager = {
+            getChapter(chapterNumber) {
+                const chapters = STORY_CONTENT.split("###");
+                const chapter = chapters.find(ch => ch.toLowerCase().includes(`chapter ${chapterNumber}`));
+                return chapter ? `### ${chapter.trim()}` : "Sorry, I couldn't find that chapter. 😕";
+            },
+
+            listAllChapters() {
+                return STORY_CONTENT.split("###").map(ch => ch.trim()).filter(Boolean).join('\n\n');
+            },
+
+            getSummary() {
+                return "This is a placeholder summary. Replace with actual summary logic.";
+            }
+        };
+
+        // Main Application
+        class StoryBot {
+            constructor() {
+                this.chatInstance = null;
+            }
+            
+            async initialize() {
+                try {
+                    const genAI = new GoogleGenerativeAI(API_CONFIG.API_KEY);
+                    this.chatInstance = await genAI.getGenerativeModel({ model: API_CONFIG.MODEL }).startChat();
+                    await this.setInitialContext();
+                    this.addBotMessage("👋 Hello! I’m GrimBot, your guide to Grimoria World.🧙‍♂️");
+                } catch (error) {
+                    console.error("Error initializing chat:", error);
+                    this.showError("Failed to initialize the chat. Please try again later.");
+                }
+            }
+
+            async setInitialContext() {
+                try {
+                    await this.chatInstance.sendMessage(INITIAL_CONTEXT_PROMPT);
+                    console.log("Initial context set successfully");
+                } catch (error) {
+                    console.error("Error sending initial message:", error);
+                    throw new Error("Failed to set initial context. Please try again.");
+                }
+            }
+
+            async handleUserMessage(message) {
+                this.addUserMessage(message);
+
+                try {
+                    if (message.toLowerCase().startsWith('chapter')) {
+                        const match = message.match(/chapter\s+(\d+)/i);
+                        if (match && match[1]) {
+                            const chapterNumber = match[1];
+                            const chapterText = StoryManager.getChapter(chapterNumber);
+                            
+                            // Convert markdown to HTML and sanitize it
+                            const formattedMessage = this.formatMessage(chapterText);
+                            const sanitizedHtml = DOMPurify.sanitize(formattedMessage);
+                            this.addBotMessage(sanitizedHtml);
+                        } else {
+                            this.addBotMessage("Please specify a valid chapter number. For example, 'Chapter 1'.");
+                        }
+                        return;
+                    }
+
+                    // Show loading indicator
+                    const loadingMessage = "Processing your request... <div class='loading'></div>";
+                    this.addBotMessage(loadingMessage);
+
+                    const botResponse = await this.sendMessage(message);
+                    
+                    // Remove loading indicator by clearing the last bot message
+                    const lastMessage = DOM.messageArea.lastChild;
+                    if (lastMessage && lastMessage.innerHTML.includes('loading')) {
+                        DOM.messageArea.removeChild(lastMessage);
+                    }
+
+                    const formattedResponse = this.formatMessage(botResponse);
+                    this.addBotMessage(DOMPurify.sanitize(formattedResponse));
+
+                } catch (error) {
+                    // Remove loading indicator if present
+                    const lastMessage = DOM.messageArea.lastChild;
+                    if (lastMessage && lastMessage.innerHTML.includes('loading')) {
+                        DOM.messageArea.removeChild(lastMessage);
+                    }
+
+                    this.showError(error.message);
+                    this.addBotMessage("Sorry, I encountered an issue processing your request. Could you try again?");
+                }
+            }
+
+            async sendMessage(message) {
+                if (!this.chatInstance) {
+                    throw new Error("Chat not initialized.");
+                }
+                
+                try {
+                    const result = await this.chatInstance.sendMessage(message);
+                    const response = await result.response;
+
+                    // Debugging: Log the entire response
+                    console.log("API Response:", response);
+
+                    // Attempt to parse as JSON
+                    try {
+                        const responseData = await response.json();
+                        console.log("Parsed Response Data:", responseData);
+
+                        // Adjust extraction based on actual API response structure
+                        if (responseData.choices && responseData.choices.length > 0) {
+                            return responseData.choices[0].message.content;
+                        } else {
+                            throw new Error("Unexpected API response structure.");
+                        }
+                    } catch (jsonError) {
+                        // If response is not JSON, attempt to get text
+                        console.warn("Response is not JSON. Attempting to parse as text.");
+                        const responseText = await response.text();
+                        console.log("Parsed Response Text:", responseText);
+                        return responseText;
+                    }
+                } catch (error) {
+                    console.error("Error sending message:", error);
+                    throw new Error("Failed to send the message. Please try again.");
+                }
+            }
+
+            // Using marked for Markdown-to-HTML conversion
+            formatMessage(text) {
+                return marked.parse(text);
+            }
+
+            addMessage(content, isUser = false) {
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message', isUser ? 'user-message' : 'bot-message');
+                
+                if (isUser) {
+                    // User message: plain text with line breaks
+                    messageElement.textContent = content;
+                } else {
+                    // Bot message: sanitize and format the content
+                    const formattedContent = this.formatMessage(content);
+                    messageElement.innerHTML = DOMPurify.sanitize(formattedContent);
+                }
+
+                // Append the message to the message area
+                DOM.messageArea.appendChild(messageElement);
+
+                // Scroll to the bottom of the chat
+                DOM.messageArea.scrollTop = DOM.messageArea.scrollHeight;
+            }
+
+            addBotMessage(content) {
+                this.addMessage(content, false);
+            }
+
+            addUserMessage(content) {
+                this.addMessage(content, true);
+            }
+
+            showError(message) {
+                DOM.errorMessage.textContent = message;
+                setTimeout(() => {
+                    DOM.errorMessage.textContent = '';
+                }, 7000); // Increased timeout for better visibility
+            }
+        }
+
+        // Event listeners
+        const storyBot = new StoryBot();
+
+        DOM.messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userInput = DOM.userInput.value.trim();
+            if (userInput) {
+                DOM.userInput.value = '';
+                await storyBot.handleUserMessage(userInput);
+            } else {
+                storyBot.showError("Input cannot be empty. Please enter a message.");
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => storyBot.initialize());
+    </script>
+</body>
+</html>
