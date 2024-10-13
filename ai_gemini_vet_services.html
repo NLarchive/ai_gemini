@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+    <title>VetBot Chat Inteligente</title>
+    <style>
+        /* CSS Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body, html {
+            height: 100%;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #app-container {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+        }
+
+        #sidebar {
+            background-color: #2a2a2a;
+            color: white;
+            padding: 20px;
+            width: 250px;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        #message-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #input-area {
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+
+        #message-form {
+            display: flex;
+            gap: 10px;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #send-button {
+            background-color: #3e7a40;
+            color: white;
+            font-weight: bold;
+        }
+
+        #send-button:hover {
+            background-color: #2a2a2a;
+        }
+
+        #whatsapp-button {
+            display: block;
+            background-color: #25D366; /* Color oficial de WhatsApp */
+            color: white;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        #whatsapp-button:hover {
+            background-color: #128C7E;
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 80%;
+            margin-bottom: 15px;
+            word-wrap: break-word;
+        }
+
+        .user-message {
+            background-color: #bee0be;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .bot-message {
+            background-color: #E5E5EA;
+            align-self: flex-start;
+        }
+
+        #error-message {
+            color: #ff0000;
+            margin-top: 10px;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            animation: spin 1s linear infinite;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            margin: auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            #app-container {
+                flex-direction: column;
+            }
+
+            #sidebar {
+                width: 100%;
+                padding: 10px;
+            }
+
+            #message-form {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+
+</head>
+<body>
+    <div id="app-container">
+        <div id="sidebar">       
+            <h2>VetBot by Nicolás Larenas</h2>
+            <h2 style="color: rgb(0, 132, 255);">Resuelve dudas y agenda</h2>
+        </div>
+        <div id="chat-container">
+            <div id="message-area"></div>
+            <div id="input-area">
+                <form id="message-form">
+                    <input type="text" id="user-input" placeholder="Escribe tu mensaje aquí sobre tu consulta...">
+                    <button type="submit" id="send-button" class="btn">Enviar mensaje</button>
+                </form>
+                <button id="whatsapp-button" class="btn">Haz clic aquí al terminar y agenda por WhatsApp</button>
+                <div id="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.3.4/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Marked para conversión de Markdown a HTML -->
+    <script type="importmap">
+        {
+            "imports": {
+                "@google/generative-ai": "https://esm.run/@google/generative-ai"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+
+        // ⚠️ **IMPORTANTE:** Por razones de seguridad, es altamente recomendable mover las interacciones con la API a un backend seguro.
+        // La siguiente configuración incluye la clave API en el frontend solo para propósitos de demostración.
+        const API_CONFIG = { 
+            API_KEY: "your-private-api-key", // ⚠️ Reemplaza con tu clave API real.
+            MODEL: "gemini-1.5-flash" // Asegúrate de que este modelo esté soportado y disponible.
+        };
+
+        // Información de Negocio
+        const BUSINESS_INFO = {
+            VET_INFO: {
+                NAME: "Dr. Nicolás Larenas",
+                EXPERIENCE: "9 años de experiencia",
+                PHONE: "56912345678", // Formato internacional sin signos
+                LOCATION: "La Reina, Santiago, Chile"
+            },
+            SERVICES: [
+                {
+                    name: "Vacunación",
+                    description: "Protege a tu mascota contra enfermedades comunes con nuestro servicio de vacunación.",
+                    price: "CLP 20,000"
+                },
+                {
+                    name: "Desparasitación",
+                    description: "Elimina parásitos internos y externos con nuestras tratamientos de desparasitación.",
+                    price: "CLP 15,000"
+                },
+                {
+                    name: "Microchip",
+                    description: "Asegura la identificación permanente de tu mascota con nuestro servicio de microchip.",
+                    price: "CLP 25,000"
+                },
+                // Añade más servicios según sea necesario
+            ]
+        };
+
+        // Prompt Inicial para el Contexto del Chatbot
+        const INITIAL_CONTEXT_PROMPT = `
+        Eres VetBot, un asistente veterinario AI creado por el Dr. Nicolás Larenas con 9 años de experiencia en el cuidado de mascotas. 
+        Ayudas a los usuarios a resolver dudas sobre el cuidado de sus mascotas y a agendar citas para servicios como vacunación, desparasitación y microchip.
+        Dispones de la siguiente información sobre los servicios ofrecidos:
+
+        ${BUSINESS_INFO.SERVICES.map(service => `
+        ### ${service.name}
+        Descripción: ${service.description}
+        Precio: ${service.price}
+        `).join('\n')}
+        `;
+
+        // Prompt para la Summarización
+        const SUMMARIZATION_PROMPT = `
+        Resume la siguiente conversación en secciones claras: Información del Usuario, Información de la Mascota y Detalles de la Cita.
+        Asegúrate de incluir todos los datos relevantes proporcionados por el usuario.
+        `;
+
+        // Módulo DOM
+        const DOM = {
+            messageArea: document.getElementById('message-area'),
+            userInput: document.getElementById('user-input'),
+            sendButton: document.getElementById('send-button'),
+            whatsappButton: document.getElementById('whatsapp-button'),
+            errorMessage: document.getElementById('error-message'),
+            messageForm: document.getElementById('message-form')
+        };
+
+        // Módulo de Servicios
+        const ServiceManager = {
+            getServiceInfo(serviceName) {
+                const service = BUSINESS_INFO.SERVICES.find(s => s.name.toLowerCase() === serviceName.toLowerCase());
+                if (!service) {
+                    return null;
+                }
+                return `
+                ### ${service.name}
+                **Descripción:** ${service.description}
+                **Precio:** ${service.price}
+                `;
+            },
+
+            listAllServices() {
+                return BUSINESS_INFO.SERVICES.map(s => `- **${s.name}**: ${s.price}`).join('\n');
+            },
+
+            getServiceRecommendations(petType, petAge) {
+                // Lógica de recomendaciones basada en tipo y edad de la mascota
+                const recommendations = BUSINESS_INFO.SERVICES.filter(service => {
+                    if (petType === 'perro' && service.name.toLowerCase().includes('vacunación')) return true;
+                    if (petAge < 1 && service.name.toLowerCase().includes('desparasitación')) return true;
+                    return false;
+                });
+
+                return recommendations.length > 0
+                    ? `Servicios recomendados para tu ${petType} de ${petAge} año(s):\n${recommendations.map(s => `- ${s.name}`).join('\n')}`
+                    : 'No hay recomendaciones específicas en este momento.';
+            }
+        };
+
+        // Clase Principal del Chatbot
+        class VetBot {
+            constructor() {
+                this.chatInstance = null;
+            }
+            
+            async initialize() {
+                try {
+                    const genAI = new GoogleGenerativeAI(API_CONFIG.API_KEY);
+                    this.chatInstance = await genAI.getGenerativeModel({ model: API_CONFIG.MODEL }).startChat();
+                    await this.setInitialContext();
+                    this.addBotMessage("¡Hola! Soy VetBot, tu asistente veterinario AI. ¿En qué puedo ayudarte hoy?");
+                } catch (error) {
+                    console.error("Error al inicializar el chat:", error);
+                    this.showError("No se pudo inicializar el chat. Por favor, intenta de nuevo más tarde.");
+                }
+            }
+
+            async setInitialContext() {
+                try {
+                    await this.chatInstance.sendMessage(INITIAL_CONTEXT_PROMPT);
+                    console.log("Contexto inicial configurado exitosamente");
+                } catch (error) {
+                    console.error("Error al enviar el mensaje inicial al modelo:", error);
+                    throw new Error("No se pudo configurar el contexto inicial. Por favor, intenta de nuevo más tarde.");
+                }
+            }
+
+            async handleUserMessage(message) {
+                this.addUserMessage(message);
+
+                try {
+                    if (message.toLowerCase() === 'listar servicios') {
+                        this.addBotMessage("Aquí tienes la lista de nuestros servicios:\n" + ServiceManager.listAllServices());
+                        return;
+                    }
+
+                    // Mostrar indicador de carga
+                    const loadingMessage = "Procesando tu solicitud... <div class='loading'></div>";
+                    this.addBotMessage(loadingMessage);
+
+                    const botResponse = await this.sendMessage(message);
+
+                    // Remover indicador de carga
+                    const lastMessage = DOM.messageArea.lastChild;
+                    if (lastMessage && lastMessage.innerHTML.includes('loading')) {
+                        DOM.messageArea.removeChild(lastMessage);
+                    }
+
+                    this.addBotMessage(botResponse);
+
+                    const mentionedServices = BUSINESS_INFO.SERVICES.filter(service => 
+                        botResponse.toLowerCase().includes(service.name.toLowerCase())
+                    );
+
+                    if (mentionedServices.length > 0) {
+                        const serviceInfo = mentionedServices.map(service => 
+                            ServiceManager.getServiceInfo(service.name)
+                        ).join('\n\n');
+                        this.addBotMessage("Información adicional sobre los servicios mencionados:\n" + serviceInfo);
+                    }
+
+                    if (this.isAppointmentRequest(botResponse)) {
+                        this.initiateAppointmentBooking();
+                    }
+
+                } catch (error) {
+                    // Remover indicador de carga si está presente
+                    const lastMessage = DOM.messageArea.lastChild;
+                    if (lastMessage && lastMessage.innerHTML.includes('loading')) {
+                        DOM.messageArea.removeChild(lastMessage);
+                    }
+
+                    this.showError(error.message);
+                    this.addBotMessage("Lo siento, hubo un problema al procesar tu mensaje. ¿Podrías reformularlo o intentar de nuevo?");
+                }
+            }
+
+            isAppointmentRequest(response) {
+                const appointmentKeywords = ['agendar', 'cita', 'reservar', 'programar'];
+                return appointmentKeywords.some(keyword => response.toLowerCase().includes(keyword));
+            }
+
+            initiateAppointmentBooking() {
+                // Implementa la lógica de agendamiento aquí
+                // Por ejemplo, solicitar información adicional al usuario
+                this.addBotMessage("Para agendar una cita, por favor proporciona tu nombre, número de teléfono y la fecha y hora preferida.");
+            }
+
+            async sendMessage(message) {
+                if (!this.chatInstance) {
+                    throw new Error("El chat no está inicializado.");
+                }
+                
+                try {
+                    const result = await this.chatInstance.sendMessage(message);
+                    const response = await result.response;
+
+                    // Depuración: Loguear la respuesta completa
+                    console.log("Respuesta de la API:", response);
+
+                    // Intentar parsear como JSON
+                    try {
+                        const responseData = await response.json();
+                        console.log("Datos de respuesta parseados:", responseData);
+
+                        // Ajustar la extracción según la estructura real de la respuesta
+                        if (responseData.choices && responseData.choices.length > 0) {
+                            return responseData.choices[0].message.content;
+                        } else {
+                            throw new Error("Estructura de respuesta inesperada.");
+                        }
+                    } catch (jsonError) {
+                        // Si la respuesta no es JSON, intentar obtener texto
+                        console.warn("La respuesta no es JSON. Intentando parsear como texto.");
+                        const responseText = await response.text();
+                        console.log("Respuesta de texto parseada:", responseText);
+                        return responseText;
+                    }
+                } catch (error) {
+                    console.error("Error al enviar el mensaje al modelo:", error);
+                    throw new Error("No se pudo enviar el mensaje. Por favor, intenta de nuevo.");
+                }
+            }
+
+            async summarizeChatContent(content) {
+                // Implementar la lógica de resumen utilizando la API
+                // Por razones de seguridad, esta funcionalidad debería estar en el backend
+                // A continuación, se muestra una implementación básica para propósitos de demostración
+
+                // ⚠️ **IMPORTANTE:** Mover esta funcionalidad a un backend seguro es esencial.
+                try {
+                    const summaryPrompt = `${SUMMARIZATION_PROMPT}\n\n${content}`;
+                    const summaryResponse = await this.sendMessage(summaryPrompt);
+
+                    if (!this.isValidSummary(summaryResponse)) {
+                        throw new Error("El resumen generado es incompleto o inválido.");
+                    }
+
+                    return this.formatSummary(summaryResponse);
+                } catch (error) {
+                    console.error("Error al generar el resumen:", error);
+                    return this.generateFallbackSummary(content);
+                }
+            }
+
+            isValidSummary(summary) {
+                const requiredSections = ['Información del Usuario', 'Información de la Mascota', 'Detalles de la Cita'];
+                return requiredSections.every(section => summary.includes(section));
+            }
+
+            formatSummary(summary) {
+                return summary.replace(/^- \*\*(.*?):\*\*/gm, '### $1:');
+            }
+
+            generateFallbackSummary(content) {
+                const userInfo = this.extractUserInfo(content);
+                const petInfo = this.extractPetInfo(content);
+                const appointmentInfo = this.extractAppointmentInfo(content);
+
+                return `
+                ### Resumen de Cita Veterinaria (Generado por Fallback)
+                ### Información del Usuario:
+                ${userInfo}
+
+                ### Información de la Mascota:
+                ${petInfo}
+
+                ### Detalles de la Cita:
+                ${appointmentInfo}
+                `;
+            }
+
+            extractUserInfo(content) {
+                const nameMatch = content.match(/Nombre:\s*(.*?)(?:,|$)/i);
+                const phoneMatch = content.match(/Teléfono:\s*(.*?)(?:,|$)/i);
+                const emailMatch = content.match(/Correo Electrónico:\s*(.*?)(?:,|$)/i);
+                const addressMatch = content.match(/Dirección:\s*(.*?)(?:,|$)/i);
+
+                return `
+                    - Nombre: ${nameMatch ? nameMatch[1] : 'No proporcionado'}
+                    - Teléfono: ${phoneMatch ? phoneMatch[1] : 'No proporcionado'}
+                    - Correo Electrónico: ${emailMatch ? emailMatch[1] : 'No proporcionado'}
+                    - Dirección: ${addressMatch ? addressMatch[1] : 'No proporcionado'}
+                `;
+            }
+
+            extractPetInfo(content) {
+                const petNameMatch = content.match(/Nombre de la Mascota:\s*(.*?)(?:,|$)/i);
+                const petTypeMatch = content.match(/Tipo de Mascota:\s*(.*?)(?:,|$)/i);
+                const petAgeMatch = content.match(/Edad:\s*(.*?)(?:,|$)/i);
+                const petBreedMatch = content.match(/Raza:\s*(.*?)(?:,|$)/i);
+                const healthConcernsMatch = content.match(/Preocupaciones de Salud:\s*(.*?)(?:,|$)/i);
+
+                return `
+                    - Nombre de la Mascota: ${petNameMatch ? petNameMatch[1] : 'No proporcionado'}
+                    - Tipo de Mascota: ${petTypeMatch ? petTypeMatch[1] : 'No proporcionado'}
+                    - Edad: ${petAgeMatch ? petAgeMatch[1] : 'No proporcionado'}
+                    - Raza: ${petBreedMatch ? petBreedMatch[1] : 'No proporcionado'}
+                    - Preocupaciones de Salud: ${healthConcernsMatch ? healthConcernsMatch[1] : 'No mencionadas'}
+                `;
+            }
+
+            extractAppointmentInfo(content) {
+                const serviceMatch = content.match(/Servicio Solicitado:\s*(.*?)(?:,|$)/i);
+                const dateMatch = content.match(/Fecha y Hora Preferidas:\s*(.*?)(?:,|$)/i);
+                const notesMatch = content.match(/Notas Adicionales:\s*(.*?)(?:,|$)/i);
+
+                return `
+                    - Servicio Solicitado: ${serviceMatch ? serviceMatch[1] : 'No especificado'}
+                    - Fecha y Hora Preferidas: ${dateMatch ? dateMatch[1] : 'No especificado'}
+                    - Notas Adicionales: ${notesMatch ? notesMatch[1] : 'Ninguna'}
+                `;
+            }
+
+            addMessage(content, isUser = false) {
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message', isUser ? 'user-message' : 'bot-message');
+
+                if (isUser) {
+                    // Mensaje del usuario: texto plano con saltos de línea
+                    messageElement.textContent = content;
+                } else {
+                    // Mensaje del bot: sanitizar y formatear el contenido
+                    const formattedContent = this.formatMessage(content);
+                    messageElement.innerHTML = DOMPurify.sanitize(formattedContent);
+                }
+
+                // Añadir el mensaje al área de mensajes
+                DOM.messageArea.appendChild(messageElement);
+
+                // Scroll hacia abajo
+                DOM.messageArea.scrollTop = DOM.messageArea.scrollHeight;
+            }
+
+            addBotMessage(content) {
+                this.addMessage(content, false);
+            }
+
+            addUserMessage(content) {
+                this.addMessage(content, true);
+            }
+
+            formatMessage(text) {
+                return text.replace(/\n/g, '<br>')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                        .replace(/`(.*?)`/g, '<code>$1</code>')
+                        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            }
+
+            showError(message) {
+                DOM.errorMessage.textContent = message;
+                setTimeout(() => {
+                    DOM.errorMessage.textContent = '';
+                }, 7000); // Aumentado para mejor visibilidad
+            }
+
+            getChatContent() {
+                return Array.from(DOM.messageArea.children)
+                    .map(msg => `${msg.classList.contains('user-message') ? 'Tú' : 'VetBot'}: ${msg.textContent}`)
+                    .join('\n');
+            }
+
+            async handleWhatsAppButtonClick() {
+                try {
+                    // Recuperar el historial del chat
+                    const chatContent = this.getChatContent();
+                    
+                    // Generar un resumen del contenido del chat
+                    const summary = await this.summarizeChatContent(chatContent);
+
+                    // Formatear el mensaje combinado para WhatsApp
+                    const formattedChatContent = `### Historial de la Conversación:\n${chatContent}`;
+                    const formattedSummary = this.formatWhatsAppMessage(summary);
+                    
+                    // Combinar historial del chat y resumen
+                    const combinedMessage = `
+*Resumen de Conversación con VetBot*
+
+${formattedChatContent}
+
+${formattedSummary}
+                    `;
+                    
+                    // Codificar el mensaje combinado para WhatsApp
+                    const encodedMessage = encodeURIComponent(combinedMessage);
+
+                    // Preparar la URL de WhatsApp
+                    const whatsappUrl = `https://wa.me/${BUSINESS_INFO.VET_INFO.PHONE}?text=${encodedMessage}`;
+                    
+                    // Abrir el chat de WhatsApp
+                    window.open(whatsappUrl, '_blank');
+
+                    // Notificar al usuario
+                    this.addBotMessage("He preparado un resumen de nuestra conversación junto con el historial y lo he enviado por WhatsApp. El veterinario se pondrá en contacto contigo pronto para confirmar tu cita.");
+
+                } catch (error) {
+                    console.error("Error al preparar el mensaje de WhatsApp:", error);
+                    this.showError("No se pudo enviar el resumen por WhatsApp. Por favor, intenta de nuevo o contacta directamente al veterinario.");
+                }
+            }
+
+
+            formatWhatsAppMessage(summary) {
+                const currentDate = new Date().toLocaleString();
+                return `
+*Resumen de Cita Veterinaria*
+Generado el: ${currentDate}
+
+${summary}
+
+Por favor, confirma esta información y espera la confirmación del veterinario. Gracias por usar nuestro servicio de citas en línea.
+                `;
+            }
+        }
+
+        // Event listeners
+        const vetbot = new VetBot();
+
+        DOM.messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userInput = DOM.userInput.value.trim();
+            if (userInput) {
+                DOM.userInput.value = '';
+                await vetbot.handleUserMessage(userInput);
+            } else {
+                vetbot.showError("La entrada no puede estar vacía. Por favor, ingresa un mensaje.");
+            }
+        });
+
+        // Actualizar el listener del botón de WhatsApp
+        DOM.whatsappButton.addEventListener('click', () => vetbot.handleWhatsAppButtonClick());
+
+        // Inicializar el chat cuando la página carga
+        document.addEventListener('DOMContentLoaded', () => vetbot.initialize());
+
+    </script>
+        
+</body>
+</html>
